@@ -410,6 +410,8 @@ function GuidePanel(){
 '.wazog-row-name{font-size:.94em;font-weight:700;white-space:nowrap;text-overflow:ellipsis;overflow:hidden}',
 '.wazog-row-programme{font-size:.72em;color:#abc1d0;white-space:nowrap;text-overflow:ellipsis;overflow:hidden;margin-top:.16em}',
 '.wazog-row-flag{font-size:.68em;color:#70dfac;flex:0 0 auto}',
+'.wazog-row-flag--http{color:#f6cd7a}',
+'.wazog-row-flag--unknown{color:#8594ac}',
 '.wazog-progress{height:2px;background:#31516a;margin-top:.32em;position:relative}',
 '.wazog-progress>span{position:absolute;top:0;left:0;bottom:0;background:#6be0e7}',
 '.wazog-pager{display:flex;gap:.5em;padding:.4em 0 0;border-top:1px solid #293a4b}',
@@ -779,7 +781,7 @@ function GuidePanel(){
     async function serverPreview(item,version,library){
         if(destroyed||version!==selectionVersion)return;
         stopPreview();
-        stateText('Включаю серверный предпросмотр 240p…');
+        stateText('Включаю серверный предпросмотр до 480p…');
         try{
             // No URL accepted from the client: backend selects a vetted catalogue entry.
             const session=await req('/v1/tv/channels/'+item.id+'/preview/start','POST',{});
@@ -861,7 +863,10 @@ function GuidePanel(){
         stopPreview();
         overLogo.text((item.name||'TV').substring(0,2).toUpperCase());
         detailName.text(item.name||'Телеканал');
-        detailMeta.text([item.country,item.language==='und'?'':item.language,item.category,Number(item.alternatives||0)+' источников'].filter(Boolean).join(' · '));
+        detailMeta.text([item.country,item.language==='und'?'':item.language,item.category,Number(item.alternatives||0)+' источников',
+            Number(item.decoded_streams||0)>0?'✓ Видеокадры проверены':
+            Number(item.verified_streams||0)>0?'◐ HTTP доступен, видео не подтверждено':'○ Источники не проверены'
+        ].filter(Boolean).join(' · '));
         stateText('Переключите канал — покажу предпросмотр, если формат доступен');
         const rightFocus=root.find('.wazog-buttons .focus').get(0);
         const previousButton=rightFocus && currentFocus()===rightFocus ? $(rightFocus).index() : -1;
@@ -882,7 +887,8 @@ function GuidePanel(){
         try{
             const result=await req('/v1/tv/channels/'+item.id+'/streams');
             const choices=result.streams.filter(s=>s.kind==='http'||s.kind==='ace').map(s=>({
-                title:s.source_name+' · '+s.quality_hint+(s.healthy===true?' ✓':''),
+                title:s.source_name+' · '+(s.video_width&&s.video_height?s.video_width+'×'+s.video_height:s.quality_hint)+
+                    (s.video_ok===true?' · ✓ видео':s.video_ok===false?' · △ нет кадра':s.healthy===true?' · ◐ HTTP':' · ○ не проверен'),
                 streamId:s.id
             }));
             if(!choices.length){note('Источники не найдены');return;}
@@ -987,7 +993,10 @@ function GuidePanel(){
                     $('<div class="wazog-progress"><span></span></div>'));
                 row.append(logo,mid);
                 if(isFavourite(item.id))row.append($('<div class="wazog-row-fav"></div>').text('★'));
-                row.append($('<div class="wazog-row-flag"></div>').text(Number(item.verified_streams||0)?'●':'○'));
+                row.append($('<div class="wazog-row-flag"></div>')
+                    .toggleClass('wazog-row-flag--http',!Number(item.decoded_streams||0)&&Number(item.verified_streams||0)>0)
+                    .toggleClass('wazog-row-flag--unknown',!Number(item.verified_streams||0))
+                    .text(Number(item.decoded_streams||0)>0?'●':Number(item.verified_streams||0)>0?'◐':'○'));
                 row.attr('data-channel-id',String(item.id));
                 focusable(row,()=>{
                     select(item,false);
