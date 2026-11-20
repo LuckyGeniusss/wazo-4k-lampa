@@ -9,6 +9,14 @@ const icon='<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="3
 function url(){return String(L.Storage.get(API_KEY,'https://4k.wazo.store')||'https://4k.wazo.store').replace(/\/+$/,'');}
 function token(){return String(L.Storage.get(TOKEN_KEY,'')||'');}
 function note(t){L.Noty.show(String(t||''),{time:4000});}
+function streamError(s){
+    const status=Number(s.last_http_status||0);
+    if(status>=400)return 'HTTP '+status;
+    const messages={invalid_hls:'Неверный HLS',html_response:'HTML вместо видео',
+        empty_body:'Пустой ответ',network_error:'Ошибка сети',
+        url_blocked:'Заблокирован адрес',unexpected_status:'Ошибка ответа'};
+    return messages[s.http_failure_reason]||'';
+}
 function esc(t){return $('<div/>').text(String(t===undefined||t===null?'':t)).html();}
 function safeUrl(v){return /^https:\/\//i.test(v)||/^http:\/\/(?:localhost|127\.0\.0\.1|10\.|192\.168\.)/i.test(v);}
 async function req(path,method,data,needToken=true){
@@ -342,7 +350,8 @@ function Panel(){
             const d=await req('/v1/tv/channels/'+item.id+'/streams');
             if(!d.streams.length)note('Нет доступных ссылок');
             d.streams.forEach(s=>{
-                const mark=s.manual_status?'✕ недоступно: '+(s.manual_note||s.manual_status):
+                const fault=streamError(s);
+                const mark=s.manual_status?'✕ недоступно: '+(s.manual_note||s.manual_status):fault?'△ '+fault:
                     (s.video_ok===true?'● декодирован видеокадр'+(s.audio_present===false?' · аудиодорожки нет':''):
                      s.video_ok===false?'△ видеокадр не получен':
                      s.healthy===true?'◐ HTTP доступен, видео не проверено':s.healthy===false?'○ ошибка':'· не проверено');
@@ -893,7 +902,8 @@ function GuidePanel(){
                 title:s.source_name+' · '+(s.video_width&&s.video_height?s.video_width+'×'+s.video_height:s.quality_hint)+
                     (s.video_ok===true?' · ✓ видео':s.video_ok===false?' · △ нет кадра':s.healthy===true?' · ◐ HTTP':' · ○ не проверен')+
                     (s.video_ok===true&&s.audio_present===false?' · нет аудиодорожки':
-                     s.audio_present===true?' · аудио '+(s.audio_codec||'есть'):''),
+                     s.audio_present===true?' · аудио '+(s.audio_codec||'есть'):'')+
+                    (streamError(s)?' · ⚠ '+streamError(s):''),
                 streamId:s.id
             }));
             if(!choices.length){note('Источники не найдены');return;}
