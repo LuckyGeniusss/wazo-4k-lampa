@@ -256,7 +256,7 @@ function Panel(){
         section('Эфирное телевидение');
         const grid=$('<div class="wazotv-grid"></div>');list.append(grid);
         CATS.forEach(c=>tile(c[0],c[1],c[2],()=>{
-            cat=c[0];page=0;query='';onlyWorking=c[0]==='Рабочие';channels();
+            cat=c[0];page=0;query='';onlyWorking=true;channels();
         },grid));
         section('Поиск и фильтры');
         add('Поиск телеканала','Название, регион или язык',()=>{
