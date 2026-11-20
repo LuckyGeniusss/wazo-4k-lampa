@@ -102,6 +102,14 @@
       button('Поиск фильма / сериала', function () {
         edit('Название или год', '', function (q) { search(q); });
       });
+      button('Открыть magnet-ссылку', function () {
+        edit('Magnet-ссылка', '', async function (magnet) {
+          try {
+            const d=await api('/v1/releases/manual','POST',{title:'Ручная раздача',magnet:magnet});
+            showFiles(d);
+          } catch (err) { alertError(err); }
+        });
+      });
       button('Отключить это устройство', function () {
         Lampa.Select.show({
           title: 'Удалить привязку на телевизоре?',
