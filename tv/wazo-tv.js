@@ -58,6 +58,51 @@ function input(title,defaultValue,done){
         if(v!==null&&v!==undefined)done(String(v).trim());
     });
 }
+let playing=null;
+async function playNext(){
+    if(!playing || playing.switching)return;
+    const state=playing;
+    const item=state.candidates.shift();
+    if(!item){note('Доступные источники закончились. Выберите другой канал.');playing=null;return;}
+    state.switching=true;
+    try{
+        const d=await req('/v1/tv/channels/'+state.channelId+'/play?stream_id='+item.id);
+        if(playing!==state)return;
+        state.lastSource=d.source;
+        L.Player.play({url:d.url,title:d.title,source:'Wazo TV · '+d.source});
+    }catch(e){
+        state.switching=false;
+        if(playing===state) {
+            note('Ошибка источника, переключаемся на запасной');
+            setTimeout(playNext,650);
+        }
+        return;
+    }
+    setTimeout(()=>{if(playing===state)state.switching=false;},1200);
+}
+async function beginPlayback(channelId,preferredStreamId){
+    const d=await req('/v1/tv/channels/'+channelId+'/streams');
+    const http=d.streams.filter(s=>s.kind==='http');
+    if(!http.length)throw Error('Нет HTTP/HLS источников; для AceStream нужен серверный шлюз');
+    if(preferredStreamId)http.sort((a,b)=>Number(b.id===preferredStreamId)-Number(a.id===preferredStreamId));
+    playing={channelId,candidates:http.slice(0,6),switching:false,lastSource:''};
+    await playNext();
+}
+function monitorPlayback(){
+    if(L.PlayerVideo&&L.PlayerVideo.listener){
+        L.PlayerVideo.listener.follow('error',function(e){
+            if(!playing || playing.switching || !e || !e.fatal)return;
+            if(!playing.candidates.length){playing=null;return;}
+            note('Источник недоступен. Пробую запасной…');
+            setTimeout(()=>{if(playing&&!playing.switching)playNext();},900);
+        });
+    }
+    if(L.Player&&L.Player.listener){
+        L.Player.listener.follow('close',function(){
+            if(playing && !playing.switching)playing=null;
+        });
+    }
+}
 function Panel(){
     const self=this,root=$('<div style="padding:1em 2%"></div>');
     const heading=$('<div class="wazotv-header"></div>').append(
@@ -160,9 +205,7 @@ function Panel(){
     }
     async function play(channelId,streamId){
         try{
-            const p='/v1/tv/channels/'+channelId+'/play'+(streamId?'?stream_id='+streamId:'');
-            const d=await req(p);
-            L.Player.play({url:d.url,title:d.title,source:'Wazo TV · '+d.source});
+            await beginPlayback(channelId,streamId);
         }catch(e){fail(e);}
     }
     this.create=()=>root;
@@ -190,6 +233,7 @@ function init(){
     if(document.getElementById('wazotv-css'))return;
     $('<style id="wazotv-css"></style>').text(CSS).appendTo('head');
     L.Component.add('wazotv',Panel);
+    monitorPlayback();
     try{L.Menu.addButton(icon,'WAZO TV',open);}
     catch(e){let el=$('<li class="menu__item selector"><div class="menu__text">WAZO TV</div></li>');el.on('hover:enter',open);$('.menu .menu__list').first().append(el);}
     decorate();
