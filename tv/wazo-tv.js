@@ -1039,6 +1039,12 @@ function GuidePanel(){
             return;
         }
         renderCategories();renderTools();load();
+        req('/v1/tv/summary').then(info=>{
+            if(destroyed || !info || !info.verification)return;
+            const progress=info.verification;
+            const total=Number(progress.eligible_channels||0),checked=Number(progress.decoded_channels||0);
+            if(total>0)head.find('.wazog-muted').text('IPTV · EPG · проверены видеокадры: '+checked+' из '+total+' каналов');
+        }).catch(()=>{});
         L.Controller.add('content',{
             toggle:()=>refreshController(),
             up:()=>guideMove('up'),
