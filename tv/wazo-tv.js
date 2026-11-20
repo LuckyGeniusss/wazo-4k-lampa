@@ -343,8 +343,11 @@ function Panel(){
             if(!d.streams.length)note('Нет доступных ссылок');
             d.streams.forEach(s=>{
                 const mark=s.manual_status?'✕ недоступно: '+(s.manual_note||s.manual_status):
-                    (s.healthy===true?'● сетевой тест пройден':s.healthy===false?'○ ошибка':'· не проверено');
-                add(s.source_name+' · '+s.quality_hint,mark+' · '+(s.kind==='ace'?'AceStream / P2P':'HTTP / HLS'),
+                    (s.video_ok===true?'● декодирован видеокадр'+(s.audio_present===false?' · аудиодорожки нет':''):
+                     s.video_ok===false?'△ видеокадр не получен':
+                     s.healthy===true?'◐ HTTP доступен, видео не проверено':s.healthy===false?'○ ошибка':'· не проверено');
+                const actual=s.video_width&&s.video_height?s.video_width+'×'+s.video_height:s.quality_hint;
+                add(s.source_name+' · '+actual,mark+' · '+(s.kind==='ace'?'AceStream / P2P':'HTTP / HLS'),
                     ()=>s.manual_status?note('Источник отмечен как недоступный в этом регионе'):play(item.id,s.id));
             });
         }catch(e){fail(e);}
@@ -888,7 +891,9 @@ function GuidePanel(){
             const result=await req('/v1/tv/channels/'+item.id+'/streams');
             const choices=result.streams.filter(s=>s.kind==='http'||s.kind==='ace').map(s=>({
                 title:s.source_name+' · '+(s.video_width&&s.video_height?s.video_width+'×'+s.video_height:s.quality_hint)+
-                    (s.video_ok===true?' · ✓ видео':s.video_ok===false?' · △ нет кадра':s.healthy===true?' · ◐ HTTP':' · ○ не проверен'),
+                    (s.video_ok===true?' · ✓ видео':s.video_ok===false?' · △ нет кадра':s.healthy===true?' · ◐ HTTP':' · ○ не проверен')+
+                    (s.video_ok===true&&s.audio_present===false?' · нет аудиодорожки':
+                     s.audio_present===true?' · аудио '+(s.audio_codec||'есть'):''),
                 streamId:s.id
             }));
             if(!choices.length){note('Источники не найдены');return;}
