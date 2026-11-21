@@ -903,12 +903,20 @@ function GuidePanel(){
                     (s.video_ok===true?' · ✓ видео':s.video_ok===false?' · △ нет кадра':s.healthy===true?' · ◐ HTTP':' · ○ не проверен')+
                     (s.video_ok===true&&s.audio_present===false?' · нет аудиодорожки':
                      s.audio_present===true?' · аудио '+(s.audio_codec||'есть'):'')+
-                    (streamError(s)?' · ⚠ '+streamError(s):''),
+                    (streamError(s)?' · ⚠ '+streamError(s):'')+
+                    (s.video_codec?' · '+s.video_codec:'')+
+                    (['mpeg2video','mpeg1video','vc1'].includes(s.video_codec)?' · ⚠ несовместимый видеокодек':''),
                 streamId:s.id
             }));
             if(!choices.length){note('Источники не найдены');return;}
             L.Select.show({title:'Видеоисточники: '+item.name,items:choices,
-                onSelect:chosen=>{stopPreview();beginPlayback(item.id,chosen.streamId).catch(e=>note(e.message||String(e)));},
+                onSelect:chosen=>{
+                    const selectedStream=(result.streams||[]).find(s=>s.id===chosen.streamId);
+                    if(selectedStream && ['mpeg2video','mpeg1video','vc1'].includes(selectedStream.video_codec)){
+                        note('ViMu не поддерживает этот видеокодек. Выберите H.264 или другой источник.');return;
+                    }
+                    stopPreview();beginPlayback(item.id,chosen.streamId).catch(e=>note(e.message||String(e)));
+                },
                 onBack:()=>{try{L.Controller.toggle('content');}catch(_){}}});
         }catch(e){note(e.message||String(e));}
     }
