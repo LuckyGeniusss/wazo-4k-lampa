@@ -585,7 +585,7 @@ function GuidePanel(){
         if(/^\d/.test(words[0]))return words[0].slice(0,3).toUpperCase();
         return (words.length>1?words.slice(0,2).map(x=>x[0]).join(''):words[0].slice(0,3)).toUpperCase();
     }
-    let selected=null,marked=null,focused=null;
+    let selected=null,marked=null,focused=null,lastToolKey='search';
     let generation=0,selectionVersion=0,previewTimer=null,hls=null,previewActive=false;
     let frameTimer=null,frameObjectURL=null,frameBusy=false,frameSeq=0;
     let epg={},channelItems=[],rowNodes=new Map(), counts={};
@@ -658,6 +658,7 @@ function GuidePanel(){
         el.addClass('selector').on('hover:enter',fn);
         el.on('hover:focus',function(){
             focused=this;
+            if(this.hasAttribute('data-wazo-tool'))lastToolKey=this.getAttribute('data-wazo-tool');
             try{this.scrollIntoView({block:'nearest',inline:'nearest'});}catch(_){}
             if(onfocus)onfocus();
         });
@@ -678,6 +679,7 @@ function GuidePanel(){
                 L.Controller.collectionFocus($(node),root);
             }
             focused=node;
+            if(node.hasAttribute('data-wazo-tool'))lastToolKey=node.getAttribute('data-wazo-tool');
             if(node.scrollIntoView)node.scrollIntoView({block:'nearest',inline:'nearest'});
             return true;
         }catch(err){
@@ -714,12 +716,13 @@ function GuidePanel(){
         }else if(direction==='up'||direction==='down'){
             const delta=direction==='down'?1:-1;
             if(inGroup(tool) && direction==='down')target=selectedRow() || row[0];
+            if(inGroup(tool) && direction==='up')target=current;
             const group=inGroup(cat)?cat:inGroup(row)?row:inGroup(buttons)?buttons:[];
             if(group.length){
                 const idx=group.indexOf(current);
                 const next=idx+delta;
                 if(next>=0 && next<group.length)target=group[next];
-                else if(inGroup(row)&&next<0)target=tool[0];
+                else if(inGroup(row)&&next<0)target=tool.find(el=>el.getAttribute('data-wazo-tool')===lastToolKey)||tool[0];
                 else if(inGroup(tool)&&next>=group.length)target=row[0];
             }
         }
