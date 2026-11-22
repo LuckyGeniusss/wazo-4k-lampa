@@ -588,6 +588,8 @@ function GuidePanel(){
     let selected=null,marked=null,focused=null,lastToolKey='search';
     let generation=0,selectionVersion=0,previewTimer=null,hls=null,previewActive=false;
     let frameTimer=null,frameObjectURL=null,frameBusy=false,frameSeq=0;
+    let lastFrameBins=null,lastMotionAt=0,motionCount=0,frameRequestSerial=0,lastRenderedRequest=0;
+    const STALE_PREVIEW_MS=10000;
     let epg={},channelItems=[],rowNodes=new Map(), counts={};
     let destroyed=false;
     const time=t=>{try{return new Date(t).toLocaleTimeString('en-IE',{hour:'2-digit',minute:'2-digit',hour12:false});}catch(_){return '';}};
@@ -605,9 +607,41 @@ function GuidePanel(){
         else if(audioEnabled){video.play().catch(()=>note('Аудио недоступно в предпросмотре'));}
         else note('Звук предпросмотра выключен');
     }
+    // JPEG existence only proves one frame. An actual updating preview needs
+    // multiple visibly different frames, and expires if they stop changing.
+    function frameBins(img){
+        try{
+            const canvas=document.createElement('canvas');
+            canvas.width=12;canvas.height=7;
+            const ctx=canvas.getContext('2d');
+            if(!ctx)return null;
+            ctx.drawImage(img,0,0,12,7);
+            const bytes=ctx.getImageData(0,0,12,7).data;
+            const bins=[];
+            for(let i=0;i<bytes.length;i+=4)
+                bins.push(Math.round((bytes[i]*0.299+bytes[i+1]*0.587+bytes[i+2]*0.114)/12));
+            return bins;
+        }catch(_){return null;}
+    }
+    function changedFrame(current,previous){
+        if(!current)return false;
+        if(!previous)return true;
+        let changed=0;
+        for(let i=0;i<current.length;i++)
+            if(Math.abs(current[i]-previous[i])>=2 && ++changed>=6)return true;
+        return false;
+    }
+    function showStalledPreview(){
+        if(!lastMotionAt||Date.now()-lastMotionAt<STALE_PREVIEW_MS)return false;
+        previewActive=false;
+        stateText('Кадр не обновляется. Попробуйте другой источник.');
+        return true;
+    }
     function clearFrames(){
         if(frameTimer){clearInterval(frameTimer);frameTimer=null;}
         frameSeq++;frameBusy=false;
+        lastFrameBins=null;lastMotionAt=0;motionCount=0;
+        frameRequestSerial=0;lastRenderedRequest=0;
         snapshot.style.display='none';
         snapshot.removeAttribute('src');
         if(frameObjectURL){URL.revokeObjectURL(frameObjectURL);frameObjectURL=null;}
@@ -615,6 +649,7 @@ function GuidePanel(){
     async function refreshFrame(sid,version,seq){
         if(frameBusy||destroyed||version!==selectionVersion||seq!==frameSeq||previewSessionId!==sid)return;
         frameBusy=true;
+        const requestNo=++frameRequestSerial;
         try{
             const response=await fetch(url()+'/v1/tv/preview/'+encodeURIComponent(sid)+'/frame.jpg',{
                 headers:{Authorization:'Bearer '+token()},cache:'no-store'
@@ -625,19 +660,31 @@ function GuidePanel(){
             const object=URL.createObjectURL(blob);
             const img=new Image();
             img.onload=()=>{
-                if(destroyed||version!==selectionVersion||seq!==frameSeq||previewSessionId!==sid){
+                if(destroyed||version!==selectionVersion||seq!==frameSeq||previewSessionId!==sid||
+                   requestNo<lastRenderedRequest){
                     URL.revokeObjectURL(object);return;
                 }
+                lastRenderedRequest=requestNo;
+                const bins=frameBins(img);
+                const moved=changedFrame(bins,lastFrameBins);
+                if(bins)lastFrameBins=bins;
+                if(moved){motionCount++;lastMotionAt=Date.now();}
                 snapshot.src=object;
                 snapshot.style.display='block';
                 if(frameObjectURL)URL.revokeObjectURL(frameObjectURL);
                 frameObjectURL=object;
-                previewActive=true;overlay.hide();
-                live.text('● КАДРЫ ЭФИРА');
+                if(!showStalledPreview()){
+                    overlay.hide();
+                    previewActive=motionCount>=2 && Boolean(bins);
+                    live.text(previewActive?'● КАДРЫ ОБНОВЛЯЮТСЯ':
+                              bins?'● КАДР ПОЛУЧЕН · ПРОВЕРКА':'● КАДР ПОЛУЧЕН');
+                }
             };
-            img.onerror=()=>URL.revokeObjectURL(object);
+            img.onerror=()=>{URL.revokeObjectURL(object);showStalledPreview();};
             img.src=object;
-        }catch(_){if(!previewActive)stateText('Получаю кадры телеканала…');}
+        }catch(_){
+            if(!showStalledPreview()&&!previewActive)stateText('Получаю кадры телеканала…');
+        }
         finally{frameBusy=false;}
     }
     function beginFramePreview(sid,version){
