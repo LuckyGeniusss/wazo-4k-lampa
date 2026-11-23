@@ -6,7 +6,16 @@ window.WazoTVLoaded=true;
 const L=window.Lampa, $=window.jQuery;
 const API_KEY='wazo4k_api', TOKEN_KEY='wazo4k_token', PAIR_KEY='wazo4k_pair';
 const icon='<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="32" height="32"><defs><linearGradient id="wzgrad" x1="0" x2="1"><stop stop-color="#43ebdc"/><stop offset="1" stop-color="#5e8bff"/></linearGradient></defs><rect width="64" height="64" rx="16" fill="#132946"/><path d="m9 19 8 28h8l7-16 7 16h8l8-28h-10l-4 16-6-16h-7l-6 16-4-16z" fill="url(#wzgrad)"/></svg>';
-function url(){return String(L.Storage.get(API_KEY,'https://4k.wazo.store')||'https://4k.wazo.store').replace(/\/+$/,'');}
+const PUBLIC_API = 'https://4k.wazo.store';
+const LOCAL_API = /^https?:\/\/(?:localhost|127(?:\.\d{1,3}){3}|10(?:\.\d{1,3}){3}|192\.168(?:\.\d{1,3}){2}|172\.(?:1[6-9]|2\d|3[01])(?:\.\d{1,3}){2})(?::\d+)?(?:\/|$)/i;
+function url(){
+    const saved=String(L.Storage.get(API_KEY,PUBLIC_API)||'').trim().replace(/\/+$/,'');
+    if(!saved || LOCAL_API.test(saved) || !/^https:\/\//i.test(saved)){
+        L.Storage.set(API_KEY,PUBLIC_API);
+        return PUBLIC_API;
+    }
+    return saved;
+}
 function token(){return String(L.Storage.get(TOKEN_KEY,'')||'');}
 function note(t){L.Noty.show(String(t||''),{time:4000});}
 function streamError(s){
@@ -18,7 +27,7 @@ function streamError(s){
     return messages[s.http_failure_reason]||'';
 }
 function esc(t){return $('<div/>').text(String(t===undefined||t===null?'':t)).html();}
-function safeUrl(v){return /^https:\/\//i.test(v)||/^http:\/\/(?:localhost|127\.0\.0\.1|10\.|192\.168\.)/i.test(v);}
+function safeUrl(v){return /^https:\/\//i.test(v);}
 async function req(path,method,data,needToken=true){
     const headers={'Content-Type':'application/json'};
     if(needToken&&token())headers.Authorization='Bearer '+token();
