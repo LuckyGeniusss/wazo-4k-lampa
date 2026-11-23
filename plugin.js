@@ -9,7 +9,17 @@
   const KEY_PAIR = 'wazo4k_pair';
   const ICON = '<svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor"><path d="M4 4h16v16H4zM10 8v8l6-4z"/></svg>';
   const storage = Lampa.Storage;
-  function base() { return String(storage.get(KEY_URL, '') || '').replace(/\/+$/, ''); }
+  const PUBLIC_API = 'https://4k.wazo.store';
+  // Older televisions may retain an unreachable LAN address. Migrate to HTTPS.
+  const LOCAL_API = /^https?:\/\/(?:localhost|127(?:\.\d{1,3}){3}|10(?:\.\d{1,3}){3}|192\.168(?:\.\d{1,3}){2}|172\.(?:1[6-9]|2\d|3[01])(?:\.\d{1,3}){2})(?::\d+)?(?:\/|$)/i;
+  function base() {
+    const saved = String(storage.get(KEY_URL, PUBLIC_API) || '').trim().replace(/\/+$/, '');
+    if (!saved || LOCAL_API.test(saved) || !/^https:\/\//i.test(saved)) {
+      storage.set(KEY_URL, PUBLIC_API);
+      return PUBLIC_API;
+    }
+    return saved;
+  }
   function token() { return storage.get(KEY_TOKEN, '') || ''; }
   function note(s) { Lampa.Noty.show(String(s), { time: 4000 }); }
   function esc(s) { return $('<div>').text(String(s == null ? '' : s)).html(); }
@@ -62,8 +72,8 @@
       info.text('Wazo 4K • ' + (base() || 'сервер не указан'));
       button('Настроить адрес API', function () {
         edit('Адрес Wazo 4K (HTTPS)', base(), function (url) {
-          if (!/^https:\/\//i.test(url) && !/^http:\/\/(localhost|127\.0\.0\.1|192\.168\.|10\.)/i.test(url)) {
-            note('Для внешнего доступа необходим HTTPS'); return;
+          if (!/^https:\/\//i.test(url)) {
+            note('Для всех телевизоров необходим публичный HTTPS-адрес'); return;
           }
           storage.set(KEY_URL, url); refresh();
         });
