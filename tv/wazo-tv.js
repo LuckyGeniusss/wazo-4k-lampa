@@ -130,10 +130,18 @@ async function playNext(){
             url:d.url,title:d.title,source:'Wazo TV · '+d.source,
             iptv:true,need_check_live_stream:true
         };
-        // Lampa's Android TV wrapper passes >1 entries to ViMu as 'asusfilelist'.
-        // Without this ViMu cannot know the next/previous channel.
-        if(list.length>1)playerItem.playlist=list.map(x=>({title:x.title,url:x.url}));
+        // Native Lampa/ViMu reads the playlist from Player.playlist(), not from
+        // the played item's playlist property. Passing only the property yields
+        // one playable URL, leaving ViMu's next/previous buttons ineffective.
+        const playlist=list.map(x=>({
+            title:x.title,url:x.url,source:'Wazo TV',iptv:true,
+            need_check_live_stream:true
+        }));
+        if(playlist.length>1)playerItem.playlist=playlist; // legacy clients
         L.Player.play(playerItem);
+        if(playlist.length>1 && typeof L.Player.playlist==='function'){
+            L.Player.playlist(playlist);
+        }
     }catch(e){
         state.switching=false;
         if(playing===state) {
