@@ -1,0 +1,52 @@
+name: WAZO TV — external availability
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 */6 * * *'
+  push:
+    paths:
+      - '.github/workflows/public-health.yml'
+      - 'tv/wazo-tv.js'
+      - 'plugin.js'
+
+permissions:
+  contents: read
+
+jobs:
+  external-health:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Verify public backend and static plugins from outside LAN
+        shell: bash
+        run: |
+          set -euo pipefail
+          base='https://4k.wazo.store'
+          raw='https://raw.githubusercontent.com/LuckyGeniusss/wazo-4k-lampa/main'
+          check() {
+            curl --fail --silent --show-error --location \
+              --connect-timeout 8 --max-time 25 --retry 2 --retry-delay 3 \
+              "$1" --output "$2"
+            }
+          check "$base/health" health.json
+          python3 - <<'PY'
+          import json
+          with open("health.json", encoding="utf-8") as f:
+              health = json.load(f)
+          for key, value in (("status", "ok"), ("database", "ok"), ("streaming_engine", "reachable")):
+              if health.get(key) != value:
+                  raise SystemExit(f"Backend unhealthy: {key} = {health.get(key)!r}")
+          print("Backend, database, streaming engine: healthy")
+          PY
+          check "$base/tv.js" deployed-tv.js
+          check "$raw/tv/wazo-tv.js" github-tv.js
+          test "$(wc -c < deployed-tv.js)" -gt 10000
+          cmp deployed-tv.js github-tv.js || { echo 'Deployed TV plugin differs from GitHub'; exit 1; }
+          node --check deployed-tv.js
+          check "$base/plugin.js" deployed-movies.js
+          check "$raw/plugin.js" github-movies.js
+          test "$(wc -c < deployed-movies.js)" -gt 3000
+          cmp deployed-movies.js github-movies.js || { echo 'Deployed movie plugin differs from GitHub'; exit 1; }
+          node --check deployed-movies.js
+          echo 'Public health, TV plugin, and movie plugin: PASS'
