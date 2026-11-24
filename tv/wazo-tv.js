@@ -137,11 +137,13 @@ async function playNext(){
             title:x.title,url:x.url,source:'Wazo TV',iptv:true,
             need_check_live_stream:true
         }));
-        if(playlist.length>1)playerItem.playlist=playlist; // legacy clients
-        L.Player.play(playerItem);
+        if(playlist.length>1)playerItem.playlist=playlist; // native Android intent
+        // Set Lampa's playlist BEFORE play(): Android may launch ViMu
+        // synchronously and snapshot the list before play() returns.
         if(playlist.length>1 && typeof L.Player.playlist==='function'){
             L.Player.playlist(playlist);
         }
+        L.Player.play(playerItem);
     }catch(e){
         state.switching=false;
         if(playing===state) {
