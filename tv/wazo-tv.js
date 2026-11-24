@@ -608,6 +608,7 @@ function GuidePanel(){
     let generation=0,selectionVersion=0,previewTimer=null,hls=null,previewActive=false;
     let frameTimer=null,frameObjectURL=null,frameBusy=false,frameSeq=0;
     let lastFrameBins=null,lastMotionAt=0,motionCount=0,frameRequestSerial=0,lastRenderedRequest=0;
+    let lastSegmentKey=null,lastSegmentAt=0;
     const STALE_PREVIEW_MS=10000;
     let epg={},channelItems=[],rowNodes=new Map(), counts={};
     let destroyed=false;
@@ -653,6 +654,13 @@ function GuidePanel(){
     function showStalledPreview(){
         if(!lastMotionAt||Date.now()-lastMotionAt<STALE_PREVIEW_MS)return false;
         previewActive=false;
+        // Segment progress proves that the encoder is still publishing HLS.
+        // Do not mistake a motionless programme slide for a network outage.
+        if(lastSegmentAt && Date.now()-lastSegmentAt<6500){
+            overlay.hide();
+            live.text('● СТАТИЧНЫЙ КАДР · ПОТОК ПОСТУПАЕТ');
+            return true;
+        }
         stateText('Кадр не обновляется. Попробуйте другой источник.');
         return true;
     }
@@ -661,6 +669,7 @@ function GuidePanel(){
         frameSeq++;frameBusy=false;
         lastFrameBins=null;lastMotionAt=0;motionCount=0;
         frameRequestSerial=0;lastRenderedRequest=0;
+        lastSegmentKey=null;lastSegmentAt=0;
         snapshot.style.display='none';
         snapshot.removeAttribute('src');
         if(frameObjectURL){URL.revokeObjectURL(frameObjectURL);frameObjectURL=null;}
@@ -674,6 +683,10 @@ function GuidePanel(){
                 headers:{Authorization:'Bearer '+token()},cache:'no-store'
             });
             if(!response.ok)throw Error('Video frame unavailable');
+            const segmentKey=response.headers.get('X-Wazo-Segment');
+            if(segmentKey && segmentKey!==lastSegmentKey){
+                lastSegmentKey=segmentKey;lastSegmentAt=Date.now();
+            }
             const blob=await response.blob();
             if(blob.size<800)throw Error('Blank frame');
             const object=URL.createObjectURL(blob);
