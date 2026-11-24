@@ -522,6 +522,70 @@ function GuidePanel(){
     if(!cats.some(x=>x[0]===category))category='Рабочие';
     let page=0,search='',onlyWorking=true,language='all',myList='';
     const LIST_KEY='wazog-lists';
+    const SYNC_KEY='wazog-sync-queue';
+    let listSyncBusy=false, listMutationSerial=0, listRetryTimer=null, listSyncWarned=false;
+    function pendingOps(){
+        const stored=L.Storage.get(SYNC_KEY,[])||[];
+        return Array.isArray(stored)?stored.filter(x=>x&&typeof x==='object').slice(-250):[];
+    }
+    function enqueueListOp(op){
+        const next=pendingOps();
+        // Keep only the final desired state for each channel in a list.
+        if(op.type==='set')for(let i=next.length-1;i>=0;i--){
+            if(next[i].type==='set'&&next[i].name===op.name&&Number(next[i].id)===Number(op.id))next.splice(i,1);
+        }
+        if(op.type==='create'&&next.some(x=>x.type==='create'&&x.name===op.name))return;
+        next.push({...op,seq:Date.now()+'-'+(++listMutationSerial)});
+        L.Storage.set(SYNC_KEY,next.slice(-250));
+        syncRemoteLists();
+    }
+    async function syncRemoteLists(){
+        if(listSyncBusy||destroyed||!token())return;
+        listSyncBusy=true;
+        try{
+            let result=await req('/v1/tv/lists');
+            if(!result||!result.lists)return; // Old/mock servers are harmless.
+            if(!result.initialized)result=await req('/v1/tv/lists/import','POST',{lists:getLists()});
+            if(!result||!result.lists)return;
+            let rounds=0;
+            while(!destroyed&&pendingOps().length&&rounds++<100){
+                const op=pendingOps()[0];
+                const path=op.type==='create'?'/v1/tv/lists/create':'/v1/tv/lists/set';
+                const body=op.type==='create'?{name:op.name}:{name:op.name,channel_id:op.id,present:op.present};
+                const changed=await req(path,'POST',body);
+                if(!changed||!changed.lists)break;
+                result=changed;
+                // A newer click can replace the operation while this request runs.
+                L.Storage.set(SYNC_KEY,pendingOps().filter(x=>x.seq!==op.seq));
+            }
+            if(!destroyed&&!pendingOps().length){
+                listSyncWarned=false;
+                saveLists(result.lists);
+                // The same subscription can be used from other televisions.
+                if(myList||category==='Избранное')load();
+                else{
+                    rowNodes.forEach((row,id)=>{
+                        row.find('.wazog-row-fav').remove();
+                        if(isFavourite(id))row.find('.wazog-row-flag').before($('<div class="wazog-row-fav"></div>').text('★'));
+                    });
+                    if(selected)actions.find('.wazog-btn').eq(3)
+                        .text(isFavourite(selected.id)?'★ Убрать':'☆ Избранное');
+                }
+            }
+        }catch(error){
+            // Do not lose local changes when the server or network is down.
+            if(!listSyncWarned)note('Списки сохранены локально. Синхронизация будет повторена.');
+            listSyncWarned=true;
+        }finally{
+            listSyncBusy=false;
+            if(!destroyed&&pendingOps().length&&!listRetryTimer){
+                listRetryTimer=setTimeout(()=>{
+                    listRetryTimer=null;
+                    syncRemoteLists();
+                },20000);
+            }
+        }
+    }
     function getLists(){
         let ls=L.Storage.get(LIST_KEY,{})||{};
         if(typeof ls!=='object'||Array.isArray(ls))ls={};
@@ -547,6 +611,7 @@ function GuidePanel(){
         else lists[name].push(val);
         saveLists(lists);
         const saved=lists[name].includes(val);
+        enqueueListOp({type:'set',name,id:val,present:saved});
         note(saved?'Добавлено: '+name:'Удалено из списка: '+name);
         if(name==='Избранное'){
             const row=rowNodes.get(val);
@@ -567,6 +632,7 @@ function GuidePanel(){
             const lists=getLists();
             if(!Object.prototype.hasOwnProperty.call(lists,name))lists[name]=[];
             saveLists(lists);
+            enqueueListOp({type:'create',name});
             if(callback)callback(name);
         });
     }
@@ -1139,6 +1205,7 @@ function GuidePanel(){
             return;
         }
         renderCategories();renderTools();load();
+        syncRemoteLists();
         req('/v1/tv/summary').then(info=>{
             if(destroyed || !info || !info.verification)return;
             const progress=info.verification;
@@ -1157,7 +1224,7 @@ function GuidePanel(){
     };
     this.pause=stopPreview;
     this.stop=stopPreview;
-    this.destroy=()=>{destroyed=true;generation++;selectionVersion++;stopPreview();root.remove();};
+    this.destroy=()=>{destroyed=true;generation++;selectionVersion++;if(listRetryTimer)clearTimeout(listRetryTimer);stopPreview();root.remove();};
     this.empty=()=>{};
 }
 
